@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Team Coverage Scheduler</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        .member {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .member-name {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .hours {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .hour-button {
+            padding: 8px;
+            border: none;
+            border-radius: 4px;
+            background-color: #eee;
+            cursor: pointer;
+        }
+        .hour-button.selected {
+            background-color: #3b82f6;
+            color: white;
+        }
+        .analyze-button {
+            padding: 12px 24px;
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 20px 0;
+            width: 100%;
+        }
+        .analyze-button:hover {
+            background-color: #2563eb;
+        }
+        .results {
+            margin-top: 20px;
+        }
+        .uncovered {
+            background-color: #fee2e2;
+            border: 1px solid #ef4444;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .single {
+            background-color: #f3f4f6;
+            border: 1px solid #9ca3af;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .multiple {
+            background-color: #dcfce7;
+            border: 1px solid #22c55e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .time-block {
+            margin: 10px 0;
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+        }
+        .local-times {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Team Coverage Scheduler</h1>
+    
+    <div id="members"></div>
+    
+    <button onclick="analyzeCoverage()" class="analyze-button">Analisar Cobertura</button>
+    
+    <div id="results" class="results"></div>
+
+    <script>
+        const members = [
+            { name: 'Fagner', timezone: 'America/Sao_Paulo', label: 'GMT-3', availableHours: new Set() },
+            { name: 'Jiantbigbeef', timezone: 'America/Chicago', label: 'CDT', availableHours: new Set() },
+            { name: 'Cdpcdp', timezone: 'America/New_York', label: 'UTC-4', availableHours: new Set() },
+            { name: 'Phoenix', timezone: 'Asia/Dhaka', label: 'GMT+6', availableHours: new Set() },
+            { name: 'Moythaboy', timezone: 'America/Los_Angeles', label: 'PST', availableHours: new Set() }
+        ];
+
+        function initializeMembersUI() {
+            const container = document.getElementById('members');
+            members.forEach((member, memberIndex) => {
+                const memberDiv = document.createElement('div');
+                memberDiv.className = 'member';
+                
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'member-name';
+                nameDiv.textContent = `${member.name} (${member.label})`;
+                
+                const hoursDiv = document.createElement('div');
+                hoursDiv.className = 'hours';
+                
+                for (let hour = 0; hour < 24; hour++) {
+                    const button = document.createElement('button');
+                    button.className = 'hour-button';
+                    button.textContent = `${hour.toString().padStart(2, '0')}:00`;
+                    button.onclick = () => toggleHour(memberIndex, hour);
+                    hoursDiv.appendChild(button);
+                }
+                
+                memberDiv.appendChild(nameDiv);
+                memberDiv.appendChild(hoursDiv);
+                container.appendChild(memberDiv);
+            });
+        }
+
+        function toggleHour(memberIndex, hour) {
+            const member = members[memberIndex];
+            const buttons = document.querySelectorAll(`.member:nth-child(${memberIndex + 1}) .hour-button`);
+            
+            if (member.availableHours.has(hour)) {
+                member.availableHours.delete(hour);
+                buttons[hour].classList.remove('selected');
+            } else {
+                member.availableHours.add(hour);
+                buttons[hour].classList.add('selected');
+            }
+        }
+
+        function getLocalTime(baseHour, baseTZ, targetTZ) {
+            const date = new Date();
+            date.setHours(baseHour, 0, 0, 0);
+            
+            const baseString = date.toLocaleString('en-US', { timeZone: baseTZ });
+            const targetString = date.toLocaleString('en-US', { timeZone: targetTZ });
+            
+            const baseTime = new Date(baseString);
+            const targetTime = new Date(targetString);
+            
+            const hourDiff = (targetTime - baseTime) / (1000 * 60 * 60);
+            return (baseHour - hourDiff + 24) % 24;
+        }
+
+        function formatHourForAllTimezones(utcHour) {
+            return members.map(member => {
+                const localHour = getLocalTime(utcHour, 'UTC', member.timezone);
+                return `${member.name}: ${localHour.toString().padStart(2, '0')}:00`;
+            }).join(' | ');
+        }
+
+        function analyzeCoverage() {
+            const hourCoverage = {};
+            for (let hour = 0; hour < 24; hour++) {
+                hourCoverage[hour] = [];
+            }
+
+            members.forEach(member => {
+                member.availableHours.forEach(localHour => {
+                    const utcHour = getLocalTime(localHour, member.timezone, 'UTC');
+                    hourCoverage[utcHour].push(member.name);
+                });
+            });
+
+            const uncovered = [];
+            const single = [];
+            const multiple = [];
+
+            for (let hour = 0; hour < 24; hour++) {
+                if (hourCoverage[hour].length === 0) {
+                    uncovered.push(hour);
+                } else if (hourCoverage[hour].length === 1) {
+                    single.push({ hour, person: hourCoverage[hour][0] });
+                } else {
+                    multiple.push({ hour, people: hourCoverage[hour] });
+                }
+            }
+
+            displayResults({ uncovered, single, multiple });
+        }
+
+        function displayResults(coverage) {
+            const results = document.getElementById('results');
+            results.innerHTML = '';
+
+            if (coverage.uncovered.length > 0) {
+                const uncoveredDiv = document.createElement('div');
+                uncoveredDiv.className = 'uncovered';
+                uncoveredDiv.innerHTML = `
+                    <h3>🚫 Horários Sem Cobertura:</h3>
+                    ${coverage.uncovered.map(hour => `
+                        <div class="time-block">
+                            UTC ${hour.toString().padStart(2, '0')}:00
+                            <div class="local-times">${formatHourForAllTimezones(hour)}</div>
+                        </div>
+                    `).join('')}
+                `;
+                results.appendChild(uncoveredDiv);
+            }
+
+            if (coverage.single.length > 0) {
+                const singleDiv = document.createElement('div');
+                singleDiv.className = 'single';
+                singleDiv.innerHTML = `
+                    <h3>👤 Horários com Cobertura Única:</h3>
+                    ${coverage.single.map(({hour, person}) => `
+                        <div class="time-block">
+                            UTC ${hour.toString().padStart(2, '0')}:00 - ${person}
+                            <div class="local-times">${formatHourForAllTimezones(hour)}</div>
+                        </div>
+                    `).join('')}
+                `;
+                results.appendChild(singleDiv);
+            }
+
+            if (coverage.multiple.length > 0) {
+                const multipleDiv = document.createElement('div');
+                multipleDiv.className = 'multiple';
+                multipleDiv.innerHTML = `
+                    <h3>👥 Horários com Múltipla Cobertura:</h3>
+                    ${coverage.multiple.map(({hour, people}) => `
+                        <div class="time-block">
+                            UTC ${hour.toString().padStart(2, '0')}:00 - ${people.join(', ')}
+                            <div class="local-times">${formatHourForAllTimezones(hour)}</div>
+                        </div>
+                    `).join('')}
+                `;
+                results.appendChild(multipleDiv);
+            }
+        }
+
+        // Initialize the UI when the page loads
+        initializeMembersUI();
+    </script>
+</body>
+</html>
